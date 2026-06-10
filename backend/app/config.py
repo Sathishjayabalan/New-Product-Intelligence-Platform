@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     anthropic_model: str = os.environ.get("CAPOS_LLM_MODEL", "claude-sonnet-4-6")
     # Separate judge model per PRD 8.3: judge model cannot be the generation model.
     judge_model: str = os.environ.get("CAPOS_JUDGE_MODEL", "claude-opus-4-8")
+    # Models benchmarked by the model-eval harness (model_evals.py).
+    candidate_models: str = os.environ.get(
+        "CAPOS_CANDIDATE_MODELS",
+        "claude-sonnet-4-6,claude-opus-4-8,claude-haiku-4-5-20251001",
+    )
     default_tenant_slug: str = "demo"
 
     class Config:

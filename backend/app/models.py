@@ -230,6 +230,24 @@ class EvalResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ModelEvalResult(Base):
+    """Model qualification benchmarks (suites S-CLS..S-JDG, model_evals.py)."""
+
+    __tablename__ = "model_eval_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
+    model_name: Mapped[str] = mapped_column(String(64), index=True)
+    suite_id: Mapped[str] = mapped_column(String(8), index=True)
+    engine: Mapped[str] = mapped_column(String(24))
+    score: Mapped[float] = mapped_column(Float)
+    threshold: Mapped[float] = mapped_column(Float)
+    passed: Mapped[bool] = mapped_column(Boolean)
+    status: Mapped[str] = mapped_column(String(16), default="completed")  # completed|skipped|error
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class AuditLog(Base):
     """Audit trail required by F-11 RBAC."""
 

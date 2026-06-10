@@ -68,6 +68,21 @@ Each stage appends to the run's `stage_log`; if any **gate eval** fails, the run
 | `CAPOS_JUDGE_MODEL` | `claude-opus-4-8` | Eval judge model — must differ from the generator (PRD §8.3) |
 | `CAPOS_DEFAULT_TENANT_SLUG` | `demo` | Tenant used when no `X-Tenant` header is sent |
 
+### 3.1b Ingestion methods (F-01)
+
+All eight paths normalise into the same entrypoint, so dedup, classification and quality scoring apply uniformly:
+
+| # | Method | Endpoint | Accepts |
+|---|---|---|---|
+| 1 | REST single | `POST /api/v1/signals` | JSON `{content, source_type, …}` |
+| 2 | REST batch | `POST /api/v1/signals/batch` | JSON `{signals: […]}` |
+| 3 | File upload | `POST /api/v1/signals/upload` | `.csv` (needs a `content` column), `.json`, `.jsonl`/`.ndjson`, `.txt` (one signal per line) |
+| 4 | Webhook receiver | `POST /api/v1/webhooks/{source_name}` | any JSON shape — probes `content`/`text`/`message`/`feedback`/… keys, incl. one nesting level and wrapped lists |
+| 5 | Streaming | `POST /api/v1/signals/stream` | NDJSON body, one event per line (Kafka/Kinesis sink shape) |
+| 6 | Connector sync | `POST /api/v1/connectors/{name}/sync` | native export shapes: `salesforce`, `hubspot`, `zendesk`, `intercom`, `sap_erp`, `kafka` (`GET /connectors` lists them) |
+| 7 | Email | `POST /api/v1/signals/email` | raw RFC-822 text — subject + plain body become the signal |
+| 8 | Feed pull | `POST /api/v1/signals/pull` | `{url, format: json\|ndjson\|txt}` — fetches and parses a hosted feed |
+
 ### 3.2 Request parameters (API)
 
 | Parameter | Where | Values / default | Effect |
@@ -120,6 +135,22 @@ Gate evals (⛔) block pipeline progression; the rest monitor. Thresholds are re
 | E-16 | Hallucination (ungrounded claims) | ≤ 0.02 | ⛔ |
 
 Expert-panel scores for E-05 / E-12 are submitted via `POST /api/v1/evals/expert-rating`; any eval can be run on demand with `POST /api/v1/evals/run/{eval_id}`.
+
+### 3.5 Model eval suites (`model_evals.py`)
+
+Where E-01…E-16 score *pipeline outputs*, the model harness scores *models themselves* — qualify a new model before promoting it to `CAPOS_LLM_MODEL`, and regression-test on every model update. Candidates = `deterministic-offline` + `CAPOS_CANDIDATE_MODELS` (comma-separated). Remote suites are marked `skipped` without an API key, never silently passed.
+
+| Suite | Engine task | Pass bar |
+|---|---|---|
+| S-CLS | Gold-set signal classification (mirrors E-01) | ≥ 0.90 |
+| S-GRD | Insight summaries quote the source verbatim (feeds E-16) | ≥ 0.98 |
+| S-HYP | Hypothesis JSON schema + need-state coverage in rationales | ≥ 0.90 |
+| S-BRF | All 10 brief fields present and non-empty | = 1.00 |
+| S-SRV | Survey schema: ≥4 questions, valid types, options on single-choice | ≥ 0.90 |
+| S-UJM | One lane per journey stage, all 6 lane keys | ≥ 0.90 |
+| S-JDG | Judge rates a well-formed card above a poor one | = 1.00 |
+
+Endpoints: `GET /model-evals/catalogue`, `POST /model-evals/run` (`{models?, suites?}`), `GET /model-evals/scoreboard` (qualification matrix — a model is `qualified` only when **all** suites complete and pass), `GET /model-evals/results`.
 
 ---
 

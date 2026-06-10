@@ -17,7 +17,7 @@ from ..textutils import content_hash, jaccard, token_set, tokenize
 
 SUPPORTED_SOURCE_TYPES = {
     "api", "file", "crm", "erp", "stream", "voc", "conference",
-    "survey", "support_ticket", "social", "market_feed", "webhook",
+    "survey", "support_ticket", "social", "market_feed", "webhook", "email",
 }
 
 NEAR_DUP_THRESHOLD = 0.82
@@ -55,6 +55,7 @@ SOURCE_WEIGHT = {
     "crm": 0.9, "voc": 1.0, "survey": 0.95, "support_ticket": 0.9,
     "api": 0.8, "stream": 0.85, "conference": 0.7, "social": 0.65,
     "market_feed": 0.75, "file": 0.7, "erp": 0.8, "webhook": 0.8,
+    "email": 0.85,
 }
 
 

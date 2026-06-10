@@ -5,16 +5,18 @@ tenant. Engine-mutating routes enforce NS19 role permissions via the
 X-Role header (F-11).
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
-from . import models, schemas
+from . import ingestion, models, schemas
 from .config import get_settings
 from .contexts import INDUSTRY_CONTEXTS, NS19_ROLES, role_can_operate
 from .database import get_db
 from .engines import building, listening, prototype
 from .engines import behavioral as behavioral_engine
 from .evals import EVAL_CATALOGUE, run_engine_evals, run_eval
+from .model_evals import MODEL_SUITES, candidate_models, model_scoreboard, run_model_evals
 from .pipeline import pipeline_summary, run_pipeline
 
 router = APIRouter(prefix="/api/v1")
@@ -155,6 +157,139 @@ def ingest_batch(
             raise HTTPException(422, str(exc)) from exc
         results["duplicates" if signal.is_duplicate else "ingested"] += 1
     return results
+
+
+def _ingest_records(
+    db: Session, tenant: models.Tenant, records: list[dict], method: str
+) -> dict:
+    """Funnel parsed records through the single ingestion entrypoint so
+    dedup, classification and quality scoring apply to every method."""
+    results = {"method": method, "ingested": 0, "duplicates": 0, "errors": []}
+    for i, record in enumerate(records):
+        try:
+            signal = listening.ingest_signal(db, tenant, **record)
+            results["duplicates" if signal.is_duplicate else "ingested"] += 1
+        except ValueError as exc:
+            results["errors"].append({"record": i, "error": str(exc)})
+    audit(db, tenant.id, "system", f"ingest_{method}",
+          f"{results['ingested']} ingested, {results['duplicates']} duplicates")
+    return results
+
+
+@router.post("/signals/upload", status_code=201)
+async def upload_signals(
+    file: UploadFile = File(...),
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role("listening")),
+):
+    """F-01 method 3: file upload (.csv, .json, .jsonl, .ndjson, .txt)."""
+    raw = await file.read()
+    try:
+        records = ingestion.parse_file(file.filename or "upload.txt", raw)
+    except ingestion.IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _ingest_records(db, tenant, records, "file_upload")
+
+
+@router.post("/webhooks/{source_name}", status_code=201)
+async def receive_webhook(
+    source_name: str,
+    request: Request,
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+):
+    """F-01 method 4: generic webhook receiver. Accepts any JSON shape and
+    probes common content fields. No role header required — webhook callers
+    are external systems (production terminates HMAC signatures upstream)."""
+    try:
+        payload = await request.json()
+        records = ingestion.map_webhook(payload, source_name)
+    except ingestion.IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, "Webhook body must be valid JSON") from exc
+    return _ingest_records(db, tenant, records, f"webhook:{source_name}")
+
+
+@router.post("/signals/stream", status_code=201)
+async def ingest_stream(
+    request: Request,
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role("listening")),
+):
+    """F-01 method 5: streaming feed — NDJSON body, one event per line
+    (Kafka / Kinesis sink shape)."""
+    body = (await request.body()).decode("utf-8", "replace")
+    try:
+        records = ingestion.parse_ndjson(body)
+    except ingestion.IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _ingest_records(db, tenant, records, "stream")
+
+
+@router.get("/connectors")
+def list_connectors():
+    return {
+        name: {"kind": spec["kind"], "expects_list_under": spec["list_key"]}
+        for name, spec in ingestion.CONNECTORS.items()
+    }
+
+
+@router.post("/connectors/{name}/sync", status_code=201)
+async def sync_connector(
+    name: str,
+    request: Request,
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role("listening")),
+):
+    """F-01 method 6: CRM/ERP/SaaS connector sync — accepts each system's
+    native export shape (Salesforce, HubSpot, Zendesk, Intercom, SAP, Kafka)."""
+    try:
+        payload = await request.json()
+        records = ingestion.run_connector(name, payload)
+    except ingestion.IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, "Connector payload must be valid JSON") from exc
+    return _ingest_records(db, tenant, records, f"connector:{name}")
+
+
+@router.post("/signals/email", status_code=201)
+def ingest_email(
+    body: schemas.EmailIn,
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role("listening")),
+):
+    """F-01 method 7: raw email (VoC inbox forward)."""
+    try:
+        record = ingestion.parse_email(body.raw)
+    except ingestion.IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _ingest_records(db, tenant, [record], "email")
+
+
+@router.post("/signals/pull", status_code=201)
+def pull_feed(
+    body: schemas.FeedPullIn,
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role("listening")),
+):
+    """F-01 method 8: pull a hosted feed (market data, exported reports)."""
+    try:
+        resp = httpx.get(body.url, timeout=15.0, follow_redirects=True)
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Feed fetch failed: {exc}") from exc
+    try:
+        records = ingestion.parse_feed(resp.text, body.format, body.url)
+    except (ingestion.IngestionError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _ingest_records(db, tenant, records, "feed_pull")
 
 
 @router.get("/signals")
@@ -554,6 +689,62 @@ def submit_expert_rating(
     db.commit()
     db.refresh(result)
     return result
+
+
+# ------------------------------------------------------------ model evals --
+@router.get("/model-evals/catalogue")
+def model_eval_catalogue():
+    """Suites benchmarking every model in the pluggable LLM layer."""
+    return {
+        "suites": MODEL_SUITES,
+        "candidate_models": candidate_models(),
+        "generation_model": get_settings().anthropic_model,
+        "judge_model": get_settings().judge_model,
+    }
+
+
+@router.post("/model-evals/run", status_code=201)
+def trigger_model_evals(
+    body: schemas.ModelEvalRequest,
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role("platform")),
+):
+    """Benchmark models against the task suites. Run on every model update
+    (PRD E-01 cadence) and before promoting a new CAPOS_LLM_MODEL."""
+    known = set(candidate_models())
+    for m in body.models or []:
+        if m not in known:
+            raise HTTPException(422, f"Unknown model '{m}'. Candidates: {sorted(known)}")
+    for s in body.suites or []:
+        if s not in MODEL_SUITES:
+            raise HTTPException(422, f"Unknown suite '{s}'. Suites: {list(MODEL_SUITES)}")
+    results = run_model_evals(db, tenant, body.models, body.suites)
+    audit(db, tenant.id, role, "model_evals_run", f"{len(results)} results")
+    return results
+
+
+@router.get("/model-evals/scoreboard")
+def get_model_scoreboard(
+    tenant: models.Tenant = Depends(get_tenant), db: Session = Depends(get_db)
+):
+    """Model qualification matrix: latest score per (model, suite)."""
+    return model_scoreboard(db, tenant)
+
+
+@router.get("/model-evals/results")
+def model_eval_results(
+    tenant: models.Tenant = Depends(get_tenant),
+    db: Session = Depends(get_db),
+    limit: int = 100,
+):
+    return (
+        db.query(models.ModelEvalResult)
+        .filter(models.ModelEvalResult.tenant_id == tenant.id)
+        .order_by(models.ModelEvalResult.id.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 # ------------------------------------------------------------------ misc --

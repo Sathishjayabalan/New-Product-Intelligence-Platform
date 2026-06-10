@@ -61,3 +61,17 @@ class UserCreate(BaseModel):
 class PipelineRunRequest(BaseModel):
     auto_validate: bool = True
     enforce_gates: bool = True
+
+
+class EmailIn(BaseModel):
+    raw: str = Field(min_length=10, description="Raw RFC-822 email text")
+
+
+class FeedPullIn(BaseModel):
+    url: str = Field(pattern=r"^https?://")
+    format: str = Field(default="json", pattern=r"^(json|ndjson|txt)$")
+
+
+class ModelEvalRequest(BaseModel):
+    models: list[str] | None = None  # default: all candidate models
+    suites: list[str] | None = None  # default: all suites
