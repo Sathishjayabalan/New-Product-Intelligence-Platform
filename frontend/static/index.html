@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CapabilityOS — Product Intelligence Platform</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div>
+        <h1>CapabilityOS</h1>
+        <p class="tagline">NS19 Product Intelligence Pipeline · Listening → Behavioral → Prototype → Building</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label>Tenant
+        <select id="tenant-select"></select>
+      </label>
+      <label>Industry context
+        <select id="context-select"></select>
+      </label>
+      <button id="run-pipeline" class="primary">▶ Run Pipeline</button>
+    </div>
+  </header>
+
+  <nav id="tabs">
+    <button data-tab="pipeline" class="active">Pipeline</button>
+    <button data-tab="signals">Signals &amp; Insights</button>
+    <button data-tab="behavioral">Clusters &amp; Hypotheses</button>
+    <button data-tab="prototype">Briefs &amp; Surveys</button>
+    <button data-tab="building">UJMs &amp; Feature Cards</button>
+    <button data-tab="evals">Quality Intelligence</button>
+  </nav>
+
+  <main>
+    <section id="tab-pipeline" class="tab active">
+      <div id="funnel" class="funnel"></div>
+      <div class="grid-2">
+        <div class="panel">
+          <h2>Latest run</h2>
+          <div id="latest-run"></div>
+        </div>
+        <div class="panel">
+          <h2>Ingest a signal</h2>
+          <form id="signal-form">
+            <select id="signal-source">
+              <option value="voc">Voice of Customer</option>
+              <option value="crm">CRM Export</option>
+              <option value="support_ticket">Support Ticket</option>
+              <option value="survey">Survey</option>
+              <option value="api">API Feed</option>
+              <option value="stream">Streaming</option>
+              <option value="conference">Conference Insight</option>
+            </select>
+            <textarea id="signal-content" rows="3" placeholder="Paste a customer signal…" required></textarea>
+            <button type="submit" class="primary">Ingest into Listening Engine</button>
+            <span id="signal-result"></span>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-signals" class="tab">
+      <h2>AI Insight Cards <span class="hint">(F-02 · grounded to source signals)</span></h2>
+      <div id="insight-cards" class="cards"></div>
+    </section>
+
+    <section id="tab-behavioral" class="tab">
+      <h2>Behavioral Clusters <span class="hint">(F-03)</span></h2>
+      <div id="clusters" class="cards"></div>
+      <h2>Feature Hypotheses <span class="hint">(F-04 · ranked, confidence-scored)</span></h2>
+      <div id="hypotheses" class="cards"></div>
+    </section>
+
+    <section id="tab-prototype" class="tab">
+      <h2>Prototype Briefs <span class="hint">(F-05 · 10-field template)</span></h2>
+      <div id="briefs" class="cards"></div>
+      <h2>Validation Surveys <span class="hint">(F-06 · power-checked)</span></h2>
+      <div id="surveys" class="cards"></div>
+    </section>
+
+    <section id="tab-building" class="tab">
+      <h2>User Journey Maps <span class="hint">(F-07)</span></h2>
+      <div id="ujms"></div>
+      <h2>Feature Cards <span class="hint">(F-08 · backlog-ready)</span></h2>
+      <div id="feature-cards" class="cards"></div>
+    </section>
+
+    <section id="tab-evals" class="tab">
+      <h2>Quality Intelligence Dashboard <span class="hint">(E-01 … E-16 · gates flag runs for human review)</span></h2>
+      <table id="evals-table">
+        <thead>
+          <tr><th>Eval</th><th>Engine</th><th>Metric</th><th>Method</th><th>Target</th><th>Latest</th><th>Gate</th><th>Status</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>CapabilityOS v1.0 · Multi-tenant SaaS · API docs at <a href="/docs">/docs</a></footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
