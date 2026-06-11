@@ -88,6 +88,20 @@ $("#context-select").addEventListener("change", async (e) => {
   } catch (err) { toast(err.message, "danger"); }
 });
 
+/* theme toggle: dark (Linear-inspired) <-> light (Stripe-inspired) */
+function applyThemeIcon() {
+  const light = document.documentElement.dataset.theme === "light";
+  $("#theme-icon-moon").style.display = light ? "" : "none";
+  $("#theme-icon-sun").style.display = light ? "none" : "";
+}
+$("#theme-toggle").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("capos_theme", next);
+  applyThemeIcon();
+});
+applyThemeIcon();
+
 $("#run-pipeline").addEventListener("click", async () => {
   const btn = $("#run-pipeline");
   btn.disabled = true;
@@ -192,7 +206,7 @@ const VIEWS = {
               <button class="btn btn-sm" id="btn-upload">⬆ Upload file</button>
               <button class="btn btn-primary btn-sm" id="btn-ingest">+ New signal</button>
             </div></div>
-          <p class="muted" style="font-size:12px">8 ingestion methods available — REST, batch, file upload, webhooks, NDJSON streaming, connector sync (Salesforce, Zendesk, SAP…), email, feed pull. See <a href="/docs" style="color:#9f93ff">API docs</a>.</p>
+          <p class="muted" style="font-size:12px">8 ingestion methods available — REST, batch, file upload, webhooks, NDJSON streaming, connector sync (Salesforce, Zendesk, SAP…), email, feed pull. See <a href="/docs" style="color:var(--accent-ink)">API docs</a>.</p>
         </div>
         ${signals.length ? `
         <div class="table-wrap" style="margin-top:16px">
